@@ -3,12 +3,14 @@ use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use thiserror::Error;
 
-use crate::model::domain::hour::Hour;
-
-use super::contract::repository::HourRepository;
+use super::contract::{
+  repository::HourRepository,
+  stream_processor::{SendInput, StreamProcessor},
+};
 
 pub(crate) struct TrainingPort {
-  hour_repo: Arc<dyn HourRepository>,
+  pub(crate) hour_repo: Arc<dyn HourRepository + Send + Sync>,
+  pub(crate) stream_processor: Arc<dyn StreamProcessor + Send + Sync>,
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -21,7 +23,19 @@ impl TrainingPort {
   pub async fn schedule(&self, time: DateTime<Utc>) -> Result<()> {
     match self.hour_repo.get_by_time(time).await? {
       None => Err(TrainingError::HourNotFound(time).into()),
-      Some(hour) => self.hour_repo.save(hour.schedule_traning()?).await,
+      Some(hour) => {
+        self.hour_repo.save(hour.schedule_traning()?).await?;
+
+        self
+          .stream_processor
+          .send(SendInput {
+            topic: String::from("training_scheduled"),
+            key: None,
+            payload: "hello world".as_bytes().to_vec(),
+          })
+          .await
+          .map_err(Into::into)
+      }
     }
   }
 
@@ -32,7 +46,10 @@ impl TrainingPort {
 
 #[cfg(test)]
 mod tests {
-  use crate::{model::domain::hour::HourError, port::contract::repository::MockHourRepository};
+  use crate::{
+    model::domain::hour::{Hour, HourError},
+    port::contract::{repository::MockHourRepository, stream_processor::MockStreamProcessor},
+  };
 
   use super::*;
   use mockall::predicate::*;
@@ -41,6 +58,7 @@ mod tests {
   async fn schedule_hour_doesnt_exist() {
     // Given
     let mut hour_repo = MockHourRepository::new();
+    let stream_processor = MockStreamProcessor::new();
 
     let time = Utc::now();
 
@@ -48,11 +66,12 @@ mod tests {
       .expect_get_by_time()
       .once()
       .with(eq(time))
-      .return_once(|_| Box::pin(async { Ok(None) }));
+      .return_once(|_| Ok(None));
 
     // When
     let port = TrainingPort {
       hour_repo: Arc::new(hour_repo),
+      stream_processor: Arc::new(stream_processor),
     };
 
     let actual = port
@@ -71,6 +90,7 @@ mod tests {
   {
     // Given
     let mut hour_repo = MockHourRepository::new();
+    let stream_processor = MockStreamProcessor::new();
 
     let time = Utc::now();
 
@@ -80,11 +100,12 @@ mod tests {
       .expect_get_by_time()
       .once()
       .with(eq(time))
-      .return_once(|_| Box::pin(async { Ok(Some(scheduled_hour)) }));
+      .return_once(|_| Ok(Some(scheduled_hour)));
 
     // When
     let port = TrainingPort {
       hour_repo: Arc::new(hour_repo),
+      stream_processor: Arc::new(stream_processor),
     };
 
     let actual = port
@@ -96,6 +117,49 @@ mod tests {
 
     // Then
     assert_eq!(HourError::HourAlreadyScheduled, actual);
+
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn schedules_hour_and_publishes_message() -> Result<(), Box<dyn std::error::Error>> {
+    let time = Utc::now();
+
+    let hour = Hour::new(time);
+
+    let mut hour_repo = MockHourRepository::new();
+
+    // Hour is available
+    hour_repo
+      .expect_get_by_time()
+      .once()
+      .with(eq(time))
+      .return_once(|_| Ok(Some(hour)));
+
+    // Should store Hour in the database
+    hour_repo.expect_save().once().return_once(|_| Ok(()));
+
+    let mut stream_processor = MockStreamProcessor::new();
+
+    // Should publish message
+    stream_processor
+      .expect_send()
+      .once()
+      .with(eq(SendInput {
+        topic: String::from("training_scheduled"),
+        key: None,
+        payload: "hello world".as_bytes().to_vec(),
+      }))
+      .return_once(|_| Ok(()));
+
+    let port = TrainingPort {
+      hour_repo: Arc::new(hour_repo),
+      stream_processor: Arc::new(stream_processor),
+    };
+
+    let result = port.schedule(time).await;
+
+    assert!(result.is_ok());
 
     Ok(())
   }

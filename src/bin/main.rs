@@ -1,6 +1,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{routing::get, Extension, Router};
+use boilerplate::Context;
 
 #[tokio::main]
 async fn main() {
@@ -11,7 +12,7 @@ async fn main() {
   let app = Router::new()
     // `GET /` goes to `root`
     .route("/", get(root))
-    .layer(Extension(Arc::new(context())));
+    .layer(Extension(Arc::new(Context::new())));
 
   // run our app with hyper
   // `axum::Server` is a re-export of `hyper::Server`

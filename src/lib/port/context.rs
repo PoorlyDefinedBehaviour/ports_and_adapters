@@ -2,14 +2,14 @@
 
 use super::training::TrainingPort;
 
-pub(crate) struct Context {
+pub struct Context {
   pub(crate) ports: Ports,
 }
 
 impl Context {
   pub fn new() -> Self {
-    Self{
-      ports: Ports::new()
+    Self {
+      ports: Ports::new(),
     }
   }
 }
@@ -19,6 +19,15 @@ pub(crate) struct Ports {
 }
 
 impl Ports {
-  training: TrainingPort{}
-}
+  fn new() -> Self {
+    let hour_repo = todo!();
+    let stream_processor = todo!();
 
+    Self {
+      training: TrainingPort {
+        hour_repo,
+        stream_processor,
+      },
+    }
+  }
+}
