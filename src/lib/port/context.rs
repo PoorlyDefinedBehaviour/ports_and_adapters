@@ -3,13 +3,19 @@
 use super::training::TrainingPort;
 
 pub struct Context {
-  pub(crate) ports: Ports,
+  pub(crate) topics: Topics,
+}
+
+pub(crate) struct Topics {
+  pub(crate) training_scheduled: String,
 }
 
 impl Context {
   pub fn new() -> Self {
     Self {
-      ports: Ports::new(),
+      topics: Topics {
+        training_scheduled: String::from("topic_here"),
+      },
     }
   }
 }

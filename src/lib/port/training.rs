@@ -3,6 +3,8 @@ use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use thiserror::Error;
 
+use crate::Context;
+
 use super::contract::{
   repository::HourRepository,
   stream_processor::{SendInput, StreamProcessor},
@@ -20,7 +22,7 @@ pub(crate) enum TrainingError {
 }
 
 impl TrainingPort {
-  pub async fn schedule(&self, time: DateTime<Utc>) -> Result<()> {
+  pub async fn schedule(&self, ctx: &Context, time: DateTime<Utc>) -> Result<()> {
     match self.hour_repo.get_by_time(time).await? {
       None => Err(TrainingError::HourNotFound(time).into()),
       Some(hour) => {
@@ -29,7 +31,7 @@ impl TrainingPort {
         self
           .stream_processor
           .send(SendInput {
-            topic: String::from("training_scheduled"),
+            topic: ctx.topics.training_scheduled.clone(),
             key: None,
             payload: "hello world".as_bytes().to_vec(),
           })
@@ -75,7 +77,7 @@ mod tests {
     };
 
     let actual = port
-      .schedule(time)
+      .schedule(&Context::new(), time)
       .await
       .unwrap_err()
       .downcast::<TrainingError>()
@@ -109,7 +111,7 @@ mod tests {
     };
 
     let actual = port
-      .schedule(time)
+      .schedule(&Context::new(), time)
       .await
       .unwrap_err()
       .downcast::<HourError>()
@@ -142,11 +144,13 @@ mod tests {
     let mut stream_processor = MockStreamProcessor::new();
 
     // Should publish message
+    let ctx = Context::new();
+
     stream_processor
       .expect_send()
       .once()
       .with(eq(SendInput {
-        topic: String::from("training_scheduled"),
+        topic: ctx.topics.training_scheduled.clone(),
         key: None,
         payload: "hello world".as_bytes().to_vec(),
       }))
@@ -157,7 +161,7 @@ mod tests {
       stream_processor: Arc::new(stream_processor),
     };
 
-    let result = port.schedule(time).await;
+    let result = port.schedule(&ctx, time).await;
 
     assert!(result.is_ok());
 
