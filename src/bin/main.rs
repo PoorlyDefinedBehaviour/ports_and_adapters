@@ -1,29 +1,33 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{routing::get, Extension, Router};
-use boilerplate::Context;
+use boilerplate::{adapter, Context};
+use metrics_exporter_prometheus::PrometheusBuilder;
+use metrics_util::MetricKindMask;
 
 #[tokio::main]
 async fn main() {
-  // initialize tracing
   tracing_subscriber::fmt::init();
 
-  // build our application with a route
-  let app = Router::new()
-    // `GET /` goes to `root`
-    .route("/", get(root))
-    .layer(Extension(Arc::new(Context::new())));
+  let builder = PrometheusBuilder::new();
 
-  // run our app with hyper
-  // `axum::Server` is a re-export of `hyper::Server`
+  let prometheus = builder
+    .idle_timeout(
+      MetricKindMask::COUNTER | MetricKindMask::HISTOGRAM,
+      Some(Duration::from_secs(10)),
+    )
+    .install_recorder()
+    .expect("failed to install Prometheus recorder");
+
+  let app = Router::new()
+    .route("/metrics", get(adapter::http_in::metrics::handler))
+    .layer(Extension(Arc::new(Context::new())))
+    .layer(Extension(Arc::new(prometheus)));
+
   let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-  tracing::debug!("listening on {}", addr);
+  tracing::info!("listening on {}", addr);
   axum::Server::bind(&addr)
     .serve(app.into_make_service())
     .await
     .unwrap();
-}
-
-async fn root() -> &'static str {
-  "hello"
 }

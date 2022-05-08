@@ -1,2 +1,2 @@
-mod http_in;
+pub mod http_in;
 mod postgres;

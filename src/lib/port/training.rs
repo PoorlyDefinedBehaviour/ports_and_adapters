@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use metrics::{decrement_gauge, increment_counter, increment_gauge};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -22,13 +23,14 @@ pub(crate) enum TrainingError {
 }
 
 impl TrainingPort {
+  #[tracing::instrument(name = "Schedule training", skip_all, fields(time = ?time))]
   pub async fn schedule(&self, ctx: &Context, time: DateTime<Utc>) -> Result<()> {
     match self.hour_repo.get_by_time(time).await? {
       None => Err(TrainingError::HourNotFound(time).into()),
       Some(hour) => {
         self.hour_repo.save(hour.schedule_traning()?).await?;
 
-        self
+        match self
           .stream_processor
           .send(SendInput {
             topic: ctx.topics.training_scheduled.clone(),
@@ -36,12 +38,22 @@ impl TrainingPort {
             payload: "hello world".as_bytes().to_vec(),
           })
           .await
-          .map_err(Into::into)
+        {
+          Err(err) => Err(err.into()),
+          Ok(_) => {
+            increment_gauge!("training_scheduled", 1.0);
+            Ok(())
+          }
+        }
       }
     }
   }
 
+  #[tracing::instrument(name = "Cancelling training", skip_all, fields(training_id = training_id))]
   pub async fn cancel(&self, training_id: u64) -> Result<(), ()> {
+    decrement_gauge!("training_scheduled", 1.0);
+    increment_counter!("training_cancelled");
+
     Ok(())
   }
 }
