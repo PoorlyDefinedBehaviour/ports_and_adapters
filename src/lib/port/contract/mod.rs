@@ -1,2 +1,2 @@
-pub(crate) mod repository;
-pub(crate) mod stream_processor;
+pub mod repository;
+pub mod stream_processor;

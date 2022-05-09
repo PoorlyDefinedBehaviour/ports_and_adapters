@@ -1,2 +1,2 @@
-pub(crate) mod domain;
-pub(crate) mod wire;
+pub mod domain;
+pub mod wire;

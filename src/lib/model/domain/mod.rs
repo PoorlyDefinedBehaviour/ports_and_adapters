@@ -1,1 +1,1 @@
-pub(crate) mod hour;
+pub mod hour;

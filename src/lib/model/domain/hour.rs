@@ -12,7 +12,7 @@ enum Availability {
 }
 
 #[derive(Debug, PartialEq, Error)]
-pub(crate) enum HourError {
+pub enum HourError {
   #[error("operation required hour to have a training scheduled")]
   NoTrainingScheduled,
   #[error("hour already scheduled")]
@@ -21,7 +21,7 @@ pub(crate) enum HourError {
 
 // Typestate pattern to enforce invariants at compile time
 #[derive(Debug, PartialEq)]
-pub(crate) struct Hour {
+pub struct Hour {
   hour: DateTime<Utc>,
   availability: Availability,
 }

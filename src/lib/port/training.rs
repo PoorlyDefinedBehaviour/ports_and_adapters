@@ -4,20 +4,21 @@ use metrics::{decrement_gauge, increment_counter, increment_gauge};
 use std::sync::Arc;
 use thiserror::Error;
 
-use crate::Context;
+use crate::{config::Config, context::Context};
 
 use super::contract::{
   repository::HourRepository,
   stream_processor::{SendInput, StreamProcessor},
 };
 
-pub(crate) struct TrainingPort {
-  pub(crate) hour_repo: Arc<dyn HourRepository + Send + Sync>,
-  pub(crate) stream_processor: Arc<dyn StreamProcessor + Send + Sync>,
+pub struct TrainingPort {
+  pub config: Arc<Config>,
+  pub hour_repo: Arc<dyn HourRepository + Send + Sync>,
+  pub stream_processor: Arc<dyn StreamProcessor + Send + Sync>,
 }
 
 #[derive(Debug, PartialEq, Error)]
-pub(crate) enum TrainingError {
+pub enum TrainingError {
   #[error("hour not found: {0}")]
   HourNotFound(DateTime<Utc>),
 }
@@ -33,7 +34,7 @@ impl TrainingPort {
         match self
           .stream_processor
           .send(SendInput {
-            topic: ctx.topics.training_scheduled.clone(),
+            topic: self.config.topics.training_scheduled.clone(),
             key: None,
             payload: "hello world".as_bytes().to_vec(),
           })
@@ -69,7 +70,7 @@ mod tests {
   use mockall::predicate::*;
 
   #[tokio::test]
-  async fn schedule_hour_doesnt_exist() {
+  async fn schedule_hour_doesnt_exist() -> Result<(), Box<dyn std::error::Error>> {
     // Given
     let mut hour_repo = MockHourRepository::new();
     let stream_processor = MockStreamProcessor::new();
@@ -84,6 +85,7 @@ mod tests {
 
     // When
     let port = TrainingPort {
+      config: Arc::new(Config::new()?),
       hour_repo: Arc::new(hour_repo),
       stream_processor: Arc::new(stream_processor),
     };
@@ -97,6 +99,8 @@ mod tests {
 
     // Then
     assert_eq!(TrainingError::HourNotFound(time), actual);
+
+    Ok(())
   }
 
   #[tokio::test]
@@ -118,6 +122,7 @@ mod tests {
 
     // When
     let port = TrainingPort {
+      config: Arc::new(Config::new()?),
       hour_repo: Arc::new(hour_repo),
       stream_processor: Arc::new(stream_processor),
     };
@@ -157,18 +162,20 @@ mod tests {
 
     // Should publish message
     let ctx = Context::new();
+    let config = Arc::new(Config::new()?);
 
     stream_processor
       .expect_send()
       .once()
       .with(eq(SendInput {
-        topic: ctx.topics.training_scheduled.clone(),
+        topic: config.topics.training_scheduled.clone(),
         key: None,
         payload: "hello world".as_bytes().to_vec(),
       }))
       .return_once(|_| Ok(()));
 
     let port = TrainingPort {
+      config,
       hour_repo: Arc::new(hour_repo),
       stream_processor: Arc::new(stream_processor),
     };
